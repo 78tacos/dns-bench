@@ -17,9 +17,8 @@ func SystemFromResolvConf(path string) ([]Resolver, error) {
 	}
 	defer f.Close()
 
-	var out []Resolver
+	var ips []string
 	sc := bufio.NewScanner(f)
-	n := 0
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -29,32 +28,36 @@ func SystemFromResolvConf(path string) ([]Resolver, error) {
 		if len(fields) < 2 || !strings.EqualFold(fields[0], "nameserver") {
 			continue
 		}
-		ip := net.ParseIP(fields[1])
-		if ip == nil || ip.To4() == nil {
-			continue
-		}
-		n++
-		out = append(out, Resolver{
-			Name:   fmt.Sprintf("System-%d", n),
-			IP:     ip.To4().String(),
-			Port:   "53",
-			System: true,
-		})
+		ips = append(ips, fields[1])
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return fromNameserverIPs(ips), nil
 }
 
-// System returns OS-configured IPv4 resolvers when /etc/resolv.conf is present.
-func System() ([]Resolver, error) {
-	const path = "/etc/resolv.conf"
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
+// fromNameserverIPs keeps unique IPv4 addresses and skips IPv6 / unspecified.
+func fromNameserverIPs(ips []string) []Resolver {
+	seen := make(map[string]struct{})
+	var out []Resolver
+	n := 0
+	for _, s := range ips {
+		ip := net.ParseIP(strings.TrimSpace(s))
+		if ip == nil || ip.To4() == nil || ip.IsUnspecified() {
+			continue
 		}
-		return nil, err
+		v4 := ip.To4().String()
+		if _, ok := seen[v4]; ok {
+			continue
+		}
+		seen[v4] = struct{}{}
+		n++
+		out = append(out, Resolver{
+			Name:   fmt.Sprintf("System-%d", n),
+			IP:     v4,
+			Port:   "53",
+			System: true,
+		})
 	}
-	return SystemFromResolvConf(path)
+	return out
 }

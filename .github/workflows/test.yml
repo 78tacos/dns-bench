@@ -6,7 +6,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -15,4 +19,16 @@ jobs:
       - name: Test
         run: go test ./...
       - name: Build
-        run: go build -o dns-bench ./cmd/dns-bench
+        run: go build -o dns-bench${{ matrix.os == 'windows-latest' && '.exe' || '' }} ./cmd/dns-bench
+
+  cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Cross-compile Windows
+        run: |
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o dns-bench-windows-amd64.exe ./cmd/dns-bench
+          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -o dns-bench-windows-arm64.exe ./cmd/dns-bench
