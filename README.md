@@ -14,6 +14,16 @@ Measurement *ideas* (cached vs uncached latency, TLD-path timing, reply reliabil
 
 ## Install
 
+### Windows
+
+Download `dns-bench-*-windows-amd64.zip` from [Releases](https://github.com/78tacos/dns-bench/releases) (use `windows-arm64` on Windows on ARM). Unzip and run `dns-bench.exe`.
+
+The Windows build reads the OS-configured DNS servers automatically. Add extras with `-resolver` / `-resolvers`. Allow UDP/53 if Windows Firewall prompts.
+
+Linux and macOS archives are on the same release page (`*.tar.gz`).
+
+### From source
+
 Needs [Go](https://go.dev/) 1.22+.
 
 From a clone of this repository:
@@ -23,13 +33,11 @@ go test ./...
 go build -o dns-bench ./cmd/dns-bench
 ```
 
-Install the module (after this code is on the branch or tag you want):
+On Windows, `go build` produces `dns-bench.exe`.
 
 ```bash
-go install github.com/78tacos/dns-bench/cmd/dns-bench@cursor/feat-v1-dns-bench-10d1
+go install github.com/78tacos/dns-bench/cmd/dns-bench@latest
 ```
-
-`go install …@latest` tracks the module’s default branch once a release is published there.
 
 ## Run a live bench
 
@@ -112,7 +120,7 @@ To exercise a real network path after building:
 
 ## Scope (v1)
 
-Included: IPv4 UDP/53, curated public list, system resolver via `/etc/resolv.conf` (Linux/macOS; on Windows pass `-resolver`), custom IPs, cached / uncached / TLD-path latency, loss %, NXDOMAIN rewrite, optional DNSSEC flag, ranked table, JSON/CSV/HTML.
+Included: IPv4 UDP/53, curated public list, system resolver (Linux/macOS `/etc/resolv.conf`; Windows `GetNetworkParams`), custom IPs, cached / uncached / TLD-path latency, loss %, NXDOMAIN rewrite, optional DNSSEC flag, ranked table, JSON/CSV/HTML.
 
 Follow-ups (not in v1): IPv6, DoH, DoT, rebinding checks, signed-domain auth timing.
 

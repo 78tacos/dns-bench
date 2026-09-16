@@ -47,7 +47,7 @@ func run(args []string) error {
 	checkNX := fs.Bool("nxdomain", true, "probe NXDOMAIN rewrite (disable with -nxdomain=false)")
 	checkTLD := fs.Bool("tld", true, "time .com TLD-path queries (disable with -tld=false)")
 	checkDNSSEC := fs.Bool("dnssec", false, "probe DNSSEC validation via dnssec-failed.org")
-	noSystem := fs.Bool("no-system", false, "skip the OS-configured resolver from resolv.conf")
+	noSystem := fs.Bool("no-system", false, "skip the OS-configured resolver")
 	noPublic := fs.Bool("no-public", false, "skip the built-in public resolver list")
 	listOnly := fs.Bool("list", false, "print probe list and exit")
 	showVersion := fs.Bool("version", false, "print version and exit")
