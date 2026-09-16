@@ -47,6 +47,22 @@ func TestTableAndSummary(t *testing.T) {
 	}
 }
 
+func TestTableUncheckedNXAndDNSSECAreDashes(t *testing.T) {
+	rows := rank.Apply([]rank.Input{
+		{Name: "Silent", Address: "192.0.2.8:53", Successes: 0, Attempts: 4},
+	}, rank.ModeBlended)
+	tbl := report.Table(rows)
+	if strings.Contains(tbl, " ok") || strings.Contains(tbl, "rewrite") {
+		t.Fatalf("unchecked NX should not look clean:\n%s", tbl)
+	}
+	if strings.Contains(tbl, " yes") || strings.Contains(tbl, " no") {
+		t.Fatalf("unchecked DNSSEC should not look like a result:\n%s", tbl)
+	}
+	if !strings.Contains(tbl, "—") {
+		t.Fatalf("expected em dash for unchecked fields:\n%s", tbl)
+	}
+}
+
 func TestJSONCSVHTML(t *testing.T) {
 	rows := sampleRows()
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)

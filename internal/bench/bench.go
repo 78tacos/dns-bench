@@ -143,10 +143,10 @@ func runOne(ctx context.Context, cfg Config, r resolvers.Resolver, domains []str
 	}
 
 	if cfg.CheckNX {
-		m.NXChecked = true
 		qname := fmt.Sprintf("nx-%s.invalid", cfg.RunID)
 		res := cfg.Query(ctx, addr, qname, cfg.Timeout)
 		if replyOK(res) {
+			m.NXChecked = true
 			m.NXRCode = res.RCode
 			if len(res.Answers) > 0 {
 				m.NXRewrite = true
@@ -155,9 +155,9 @@ func runOne(ctx context.Context, cfg Config, r resolvers.Resolver, domains []str
 	}
 
 	if cfg.CheckDNSSEC {
-		m.DNSSECChecked = true
 		res := cfg.Query(ctx, addr, DNSSECProbeName, cfg.Timeout)
 		if replyOK(res) {
+			m.DNSSECChecked = true
 			m.DNSSECRCode = res.RCode
 			if res.RCode == dnsquery.RCodeServFail {
 				m.DNSSECValidate = true

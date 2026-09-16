@@ -137,6 +137,9 @@ func TestRunCachedUncachedTLDAndReliability(t *testing.T) {
 	if dead.Successes != 0 || dead.Attempts != 12 {
 		t.Fatalf("dead %+v", dead)
 	}
+	if dead.NXChecked || dead.DNSSECChecked || dead.DNSSECValidate {
+		t.Fatalf("timeout must leave NX/DNSSEC unchecked, got %+v", dead)
+	}
 
 	f.mu.Lock()
 	names := append([]string(nil), f.names...)
@@ -202,6 +205,32 @@ func TestDNSSECNotValidating(t *testing.T) {
 	ms := bench.Run(context.Background(), cfg)
 	if !ms[0].DNSSECChecked || ms[0].DNSSECValidate {
 		t.Fatalf("expected non-validating: %+v", ms[0])
+	}
+}
+
+func TestNXAndDNSSECTimeoutLeftUnchecked(t *testing.T) {
+	f := &fakeDNS{dropAll: true}
+	cfg := bench.Config{
+		Resolvers:   []resolvers.Resolver{{Name: "Silent", IP: "192.0.2.8", Port: "53"}},
+		Domains:     []string{"example.com"},
+		Queries:     1,
+		CheckNX:     true,
+		CheckDNSSEC: true,
+		RunID:       "to",
+		Query:       f.Query,
+	}
+	ms := bench.Run(context.Background(), cfg)
+	if ms[0].NXChecked {
+		t.Fatalf("NX timeout marked checked: %+v", ms[0])
+	}
+	if ms[0].NXRewrite {
+		t.Fatalf("NX timeout must not claim rewrite: %+v", ms[0])
+	}
+	if ms[0].DNSSECChecked {
+		t.Fatalf("DNSSEC timeout marked checked: %+v", ms[0])
+	}
+	if ms[0].DNSSECValidate {
+		t.Fatalf("DNSSEC timeout must not claim validating: %+v", ms[0])
 	}
 }
 

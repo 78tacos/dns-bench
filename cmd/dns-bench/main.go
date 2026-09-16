@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -21,10 +22,20 @@ import (
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
+		var printed printedError
+		if errors.As(err, &printed) {
+			os.Exit(1)
+		}
 		fmt.Fprintf(os.Stderr, "dns-bench: %v\n", err)
 		os.Exit(1)
 	}
 }
+
+// printedError is a FlagSet parse failure already written to stderr.
+type printedError struct{ err error }
+
+func (e printedError) Error() string { return e.err.Error() }
+func (e printedError) Unwrap() error { return e.err }
 
 func run(args []string) error {
 	fs := flag.NewFlagSet("dns-bench", flag.ContinueOnError)
@@ -53,7 +64,10 @@ func run(args []string) error {
 	})
 
 	if err := fs.Parse(args); err != nil {
-		return err
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return printedError{err}
 	}
 	if *showVersion {
 		fmt.Printf("dns-bench %s\n", version.Version)
