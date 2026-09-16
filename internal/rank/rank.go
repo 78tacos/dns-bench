@@ -17,6 +17,7 @@ const (
 	ModeBlended Mode = iota
 	ModeCached
 	ModeUncached
+	ModeTLD
 	ModeReliability
 )
 
@@ -26,15 +27,18 @@ const NXRewritePenalty = 0.85
 
 // Input is one resolver's measured stats, before scoring.
 type Input struct {
-	Name      string
-	Address   string
-	System    bool
-	Cached    stats.Summary
-	Uncached  stats.Summary
-	Successes int
-	Attempts  int
-	NXRewrite bool
-	NXChecked bool
+	Name           string
+	Address        string
+	System         bool
+	Cached         stats.Summary
+	Uncached       stats.Summary
+	TLD            stats.Summary
+	Successes      int
+	Attempts       int
+	NXRewrite      bool
+	NXChecked      bool
+	DNSSECChecked  bool
+	DNSSECValidate bool
 }
 
 // Row is a scored, ready-to-print resolver result.
@@ -53,10 +57,12 @@ func ParseMode(s string) (Mode, error) {
 		return ModeCached, nil
 	case "uncached", "cold":
 		return ModeUncached, nil
+	case "tld", "dotcom", "com", "tldpath":
+		return ModeTLD, nil
 	case "reliability", "reliable", "loss":
 		return ModeReliability, nil
 	default:
-		return 0, fmt.Errorf("unknown rank mode %q (want blended, cached, uncached, reliability)", s)
+		return 0, fmt.Errorf("unknown rank mode %q (want blended, cached, uncached, tld, reliability)", s)
 	}
 }
 
@@ -68,6 +74,8 @@ func (m Mode) String() string {
 		return "cached"
 	case ModeUncached:
 		return "uncached"
+	case ModeTLD:
+		return "tld"
 	case ModeReliability:
 		return "reliability"
 	default:
@@ -106,18 +114,22 @@ func blendedMS(cached, uncached time.Duration) float64 {
 
 // Score is higher-is-better. Latency modes use reliability / milliseconds
 // so lossy resolvers drop even if their few successes were fast.
-func Score(rel float64, cachedP50, uncachedP50 time.Duration, nxRewrite bool, mode Mode) float64 {
+// Blended is equal-weight cached + uncached p50 (TLD is a separate column/mode).
+func Score(in Input, mode Mode) float64 {
+	rel := Reliability(in.Successes, in.Attempts)
 	if rel <= 0 {
 		return 0
 	}
 	var base float64
 	switch mode {
 	case ModeBlended:
-		base = rel / blendedMS(cachedP50, uncachedP50)
+		base = rel / blendedMS(in.Cached.P50, in.Uncached.P50)
 	case ModeCached:
-		base = rel / latencyMS(cachedP50)
+		base = rel / latencyMS(in.Cached.P50)
 	case ModeUncached:
-		base = rel / latencyMS(uncachedP50)
+		base = rel / latencyMS(in.Uncached.P50)
+	case ModeTLD:
+		base = rel / latencyMS(in.TLD.P50)
 	case ModeReliability:
 		base = rel
 	default:
@@ -126,7 +138,7 @@ func Score(rel float64, cachedP50, uncachedP50 time.Duration, nxRewrite bool, mo
 	if math.IsInf(base, 0) || math.IsNaN(base) {
 		return 0
 	}
-	if nxRewrite {
+	if in.NXRewrite {
 		base *= NXRewritePenalty
 	}
 	return base
@@ -140,7 +152,7 @@ func Apply(inputs []Input, mode Mode) []Row {
 		out[i] = Row{
 			Input:       in,
 			Reliability: rel,
-			Score:       Score(rel, in.Cached.P50, in.Uncached.P50, in.NXRewrite, mode),
+			Score:       Score(in, mode),
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {

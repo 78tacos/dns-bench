@@ -59,6 +59,11 @@ func TestSummarize(t *testing.T) {
 	if s.P50 != 25*time.Millisecond {
 		t.Fatalf("p50: %v", s.P50)
 	}
+	// Sample stddev of 10,20,30,40 ms is ~12.91 ms.
+	sdMS := float64(s.StdDev) / float64(time.Millisecond)
+	if sdMS < 12.5 || sdMS > 13.3 {
+		t.Fatalf("stddev ms: %v (%v)", sdMS, s.StdDev)
+	}
 }
 
 func TestSummarizeEmpty(t *testing.T) {

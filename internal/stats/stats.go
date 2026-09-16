@@ -15,6 +15,7 @@ type Summary struct {
 	Max      time.Duration
 	P50      time.Duration
 	P95      time.Duration
+	StdDev   time.Duration
 }
 
 // Summarize computes min/avg/max and nearest-rank p50/p95.
@@ -35,7 +36,22 @@ func Summarize(samples []time.Duration, failures int) Summary {
 	s.Avg = sum / time.Duration(len(sorted))
 	s.P50 = Percentile(sorted, 50)
 	s.P95 = Percentile(sorted, 95)
+	s.StdDev = stdDev(sorted, s.Avg)
 	return s
+}
+
+func stdDev(sorted []time.Duration, mean time.Duration) time.Duration {
+	n := len(sorted)
+	if n < 2 {
+		return 0
+	}
+	var ss float64
+	m := float64(mean)
+	for _, d := range sorted {
+		diff := float64(d) - m
+		ss += diff * diff
+	}
+	return time.Duration(math.Sqrt(ss / float64(n-1)))
 }
 
 // Percentile returns the linear-interpolated percentile of a sorted

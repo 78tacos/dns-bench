@@ -19,7 +19,8 @@ func sampleRows() []rank.Row {
 			Cached: stats.Summary{Count: 4, P50: 10 * time.Millisecond, P95: 12 * time.Millisecond,
 				Min: 8 * time.Millisecond, Avg: 10 * time.Millisecond, Max: 12 * time.Millisecond},
 			Uncached:  stats.Summary{Count: 4, P50: 20 * time.Millisecond, P95: 30 * time.Millisecond},
-			Successes: 8, Attempts: 8,
+			TLD:       stats.Summary{Count: 4, P50: 40 * time.Millisecond, P95: 55 * time.Millisecond},
+			Successes: 12, Attempts: 12,
 		},
 		{
 			Name: "Slow", Address: "192.0.2.2:53",
@@ -34,7 +35,7 @@ func sampleRows() []rank.Row {
 func TestTableAndSummary(t *testing.T) {
 	rows := sampleRows()
 	tbl := report.Table(rows)
-	if !strings.Contains(tbl, "RANK") || !strings.Contains(tbl, "Fast") {
+	if !strings.Contains(tbl, "RANK") || !strings.Contains(tbl, "Fast") || !strings.Contains(tbl, "TLD") {
 		t.Fatalf("table:\n%s", tbl)
 	}
 	sum := report.SummaryLine(rows, rank.ModeBlended)
@@ -76,8 +77,8 @@ func TestJSONCSVHTML(t *testing.T) {
 	if !strings.HasPrefix(csv, "rank,name,address") {
 		t.Fatalf("csv header: %s", csv)
 	}
-	if !strings.Contains(csv, "Fast") {
-		t.Fatal("csv body")
+	if !strings.Contains(csv, "tld_p50_ms") || !strings.Contains(csv, "Fast") {
+		t.Fatal("csv tld column or body")
 	}
 
 	htmlDoc := string(report.HTML(rows, rank.ModeBlended, now))

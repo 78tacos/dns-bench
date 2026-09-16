@@ -30,10 +30,12 @@ func run(args []string) error {
 	fs := flag.NewFlagSet("dns-bench", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	queries := fs.Int("queries", 8, "timed queries per resolver per phase (cached and uncached)")
+	queries := fs.Int("queries", 8, "timed queries per resolver per latency phase (cached, uncached, tld)")
 	timeout := fs.Duration("timeout", 2*time.Second, "per-query timeout")
-	rankMode := fs.String("rank", "blended", "ranking: blended, cached, uncached, reliability")
-	checkNX := fs.Bool("nxdomain", false, "probe NXDOMAIN rewrite (search/assist interception)")
+	rankMode := fs.String("rank", "blended", "ranking: blended, cached, uncached, tld, reliability")
+	checkNX := fs.Bool("nxdomain", true, "probe NXDOMAIN rewrite (disable with -nxdomain=false)")
+	checkTLD := fs.Bool("tld", true, "time .com TLD-path queries (disable with -tld=false)")
+	checkDNSSEC := fs.Bool("dnssec", false, "probe DNSSEC validation via dnssec-failed.org")
 	noSystem := fs.Bool("no-system", false, "skip the OS-configured resolver from resolv.conf")
 	noPublic := fs.Bool("no-public", false, "skip the built-in public resolver list")
 	listOnly := fs.Bool("list", false, "print probe list and exit")
@@ -110,19 +112,21 @@ func run(args []string) error {
 	if !*quiet {
 		fmt.Fprintf(os.Stderr, "dns-bench v%s — resolver lab for your network edge\n", version.Version)
 		fmt.Fprintf(os.Stderr, "%s\n\n", report.Disclaimer)
-		fmt.Fprintf(os.Stderr, "Probing %d resolver(s), %d timed queries × 2 phases (timeout %s). Live bench needs UDP/53.\n",
+		fmt.Fprintf(os.Stderr, "Probing %d resolver(s), %d timed queries × latency phases (timeout %s). Live bench needs UDP/53.\n",
 			len(probes), *queries, timeout)
 	}
 
 	var mu sync.Mutex
 	done := 0
 	cfg := bench.Config{
-		Resolvers: probes,
-		Domains:   names.Take(*queries),
-		Queries:   *queries,
-		Timeout:   *timeout,
-		CheckNX:   *checkNX,
-		RunID:     newRunID(),
+		Resolvers:   probes,
+		Domains:     names.Take(*queries),
+		Queries:     *queries,
+		Timeout:     *timeout,
+		CheckNX:     *checkNX,
+		CheckTLD:    *checkTLD,
+		CheckDNSSEC: *checkDNSSEC,
+		RunID:       newRunID(),
 		OnDone: func(m bench.Measurement) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -130,10 +134,11 @@ func run(args []string) error {
 			if *quiet {
 				return
 			}
-			fmt.Fprintf(os.Stderr, "[%d/%d] %s  cached p50=%s  uncached p50=%s  loss=%.0f%%\n",
+			fmt.Fprintf(os.Stderr, "[%d/%d] %s  cached p50=%s  uncached p50=%s  tld p50=%s  loss=%.0f%%\n",
 				done, len(probes), m.Resolver.Label(),
 				msOrDash(m.Cached.P50, m.Cached.Count),
 				msOrDash(m.Uncached.P50, m.Uncached.Count),
+				msOrDash(m.TLD.P50, m.TLD.Count),
 				lossPct(m.Successes, m.Attempts),
 			)
 		},
@@ -144,15 +149,18 @@ func run(args []string) error {
 	inputs := make([]rank.Input, len(measurements))
 	for i, m := range measurements {
 		inputs[i] = rank.Input{
-			Name:      m.Resolver.Name,
-			Address:   m.Resolver.Addr(),
-			System:    m.Resolver.System,
-			Cached:    m.Cached,
-			Uncached:  m.Uncached,
-			Successes: m.Successes,
-			Attempts:  m.Attempts,
-			NXRewrite: m.NXRewrite,
-			NXChecked: m.NXChecked,
+			Name:           m.Resolver.Name,
+			Address:        m.Resolver.Addr(),
+			System:         m.Resolver.System,
+			Cached:         m.Cached,
+			Uncached:       m.Uncached,
+			TLD:            m.TLD,
+			Successes:      m.Successes,
+			Attempts:       m.Attempts,
+			NXRewrite:      m.NXRewrite,
+			NXChecked:      m.NXChecked,
+			DNSSECChecked:  m.DNSSECChecked,
+			DNSSECValidate: m.DNSSECValidate,
 		}
 	}
 	rows := rank.Apply(inputs, mode)

@@ -21,6 +21,8 @@ func TestParseMode(t *testing.T) {
 		{"cached", rank.ModeCached, false},
 		{"uncached", rank.ModeUncached, false},
 		{"cold", rank.ModeUncached, false},
+		{"tld", rank.ModeTLD, false},
+		{"dotcom", rank.ModeTLD, false},
 		{"reliability", rank.ModeReliability, false},
 		{"loss", rank.ModeReliability, false},
 		{"nope", 0, true},
@@ -50,6 +52,7 @@ func TestModeStringExhaustive(t *testing.T) {
 		rank.ModeBlended,
 		rank.ModeCached,
 		rank.ModeUncached,
+		rank.ModeTLD,
 		rank.ModeReliability,
 	} {
 		if m.String() == "" {
@@ -67,46 +70,74 @@ func TestReliability(t *testing.T) {
 	}
 }
 
+func scored(rel float64, cached, uncached time.Duration, nx bool, mode rank.Mode) float64 {
+	attempts := 10
+	successes := int(rel*float64(attempts) + 0.5)
+	in := rank.Input{
+		Cached:    stats.Summary{Count: 1, P50: cached},
+		Uncached:  stats.Summary{Count: 1, P50: uncached},
+		Successes: successes,
+		Attempts:  attempts,
+		NXRewrite: nx,
+	}
+	return rank.Score(in, mode)
+}
+
 func TestScoreLatencyModes(t *testing.T) {
-	fast := rank.Score(1, 10*time.Millisecond, 20*time.Millisecond, false, rank.ModeBlended)
-	slow := rank.Score(1, 50*time.Millisecond, 100*time.Millisecond, false, rank.ModeBlended)
+	fast := scored(1, 10*time.Millisecond, 20*time.Millisecond, false, rank.ModeBlended)
+	slow := scored(1, 50*time.Millisecond, 100*time.Millisecond, false, rank.ModeBlended)
 	if fast <= slow {
 		t.Fatalf("fast %v should beat slow %v", fast, slow)
 	}
-	flaky := rank.Score(0.5, 10*time.Millisecond, 20*time.Millisecond, false, rank.ModeBlended)
+	flaky := scored(0.5, 10*time.Millisecond, 20*time.Millisecond, false, rank.ModeBlended)
 	if flaky >= fast {
 		t.Fatalf("flaky %v should lose to reliable %v", flaky, fast)
 	}
-	if rank.Score(0, 1*time.Millisecond, 1*time.Millisecond, false, rank.ModeBlended) != 0 {
+	if scored(0, 1*time.Millisecond, 1*time.Millisecond, false, rank.ModeBlended) != 0 {
 		t.Fatal("zero reliability")
 	}
 }
 
 func TestScoreCachedIgnoresUncached(t *testing.T) {
-	a := rank.Score(1, 10*time.Millisecond, 500*time.Millisecond, false, rank.ModeCached)
-	b := rank.Score(1, 10*time.Millisecond, 1*time.Millisecond, false, rank.ModeCached)
+	a := scored(1, 10*time.Millisecond, 500*time.Millisecond, false, rank.ModeCached)
+	b := scored(1, 10*time.Millisecond, 1*time.Millisecond, false, rank.ModeCached)
 	if a != b {
 		t.Fatalf("cached mode should ignore uncached: %v vs %v", a, b)
 	}
 }
 
 func TestScoreUncachedIgnoresCached(t *testing.T) {
-	a := rank.Score(1, 500*time.Millisecond, 20*time.Millisecond, false, rank.ModeUncached)
-	b := rank.Score(1, 1*time.Millisecond, 20*time.Millisecond, false, rank.ModeUncached)
+	a := scored(1, 500*time.Millisecond, 20*time.Millisecond, false, rank.ModeUncached)
+	b := scored(1, 1*time.Millisecond, 20*time.Millisecond, false, rank.ModeUncached)
 	if a != b {
 		t.Fatalf("uncached mode should ignore cached: %v vs %v", a, b)
 	}
 }
 
+func TestScoreTLDMode(t *testing.T) {
+	fast := rank.Score(rank.Input{
+		TLD:       stats.Summary{Count: 3, P50: 30 * time.Millisecond},
+		Successes: 10, Attempts: 10,
+	}, rank.ModeTLD)
+	slow := rank.Score(rank.Input{
+		TLD:       stats.Summary{Count: 3, P50: 90 * time.Millisecond},
+		Cached:    stats.Summary{Count: 3, P50: 1 * time.Millisecond},
+		Successes: 10, Attempts: 10,
+	}, rank.ModeTLD)
+	if fast <= slow {
+		t.Fatalf("tld mode should rank by TLD p50: %v vs %v", fast, slow)
+	}
+}
+
 func TestScoreReliabilityMode(t *testing.T) {
-	if rank.Score(0.9, 5*time.Millisecond, 5*time.Millisecond, false, rank.ModeReliability) != 0.9 {
+	if scored(0.9, 5*time.Millisecond, 5*time.Millisecond, false, rank.ModeReliability) != 0.9 {
 		t.Fatal("reliability mode is raw ratio")
 	}
 }
 
 func TestNXRewritePenalty(t *testing.T) {
-	clean := rank.Score(1, 10*time.Millisecond, 10*time.Millisecond, false, rank.ModeBlended)
-	dirty := rank.Score(1, 10*time.Millisecond, 10*time.Millisecond, true, rank.ModeBlended)
+	clean := scored(1, 10*time.Millisecond, 10*time.Millisecond, false, rank.ModeBlended)
+	dirty := scored(1, 10*time.Millisecond, 10*time.Millisecond, true, rank.ModeBlended)
 	want := clean * rank.NXRewritePenalty
 	if math.Abs(dirty-want) > 1e-9 {
 		t.Fatalf("penalty: dirty %v want %v", dirty, want)

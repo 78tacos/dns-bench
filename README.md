@@ -10,7 +10,7 @@ dns-bench is an **independent MIT-licensed tool**. It is **not affiliated with, 
 
 “DNS Benchmark” is a GRC product name. This project is **dns-bench**.
 
-Measurement *ideas* (cached vs uncached latency, reply reliability, NXDOMAIN rewrite as a flag) are widely discussed in public DNS literature. The implementation, scoring, copy, and presentation here are original.
+Measurement *ideas* (cached vs uncached latency, TLD-path timing, reply reliability, NXDOMAIN rewrite, DNSSEC awareness) are widely discussed in public DNS literature. The implementation, scoring, copy, and presentation here are original.
 
 ## Install
 
@@ -39,54 +39,62 @@ A live run **needs network access** to UDP/53 on the resolvers you probe. Unit t
 # system resolver + built-in public IPv4 list
 ./dns-bench
 
-# more samples, NXDOMAIN rewrite check, reports
-./dns-bench -queries 20 -nxdomain -json report.json -csv report.csv -html report.html
+# more samples, DNSSEC probe, reports
+./dns-bench -queries 20 -dnssec -json report.json -csv report.csv -html report.html
 
 # only your LAN resolver plus one public IP
 ./dns-bench -no-public -resolver 192.168.1.1 -resolver 1.1.1.1
 
-# rank by uncached (cold QNAME) latency
+# rank by uncached (cold QNAME) or .com TLD-path latency
 ./dns-bench -rank uncached
+./dns-bench -rank tld
 ```
 
 Useful flags:
 
 | Flag | Meaning |
 | --- | --- |
-| `-queries N` | Timed queries per resolver **per phase** (default 8) |
+| `-queries N` | Timed queries per resolver **per latency phase** (default 8) |
 | `-timeout 2s` | Per-query timeout |
-| `-rank blended\|cached\|uncached\|reliability` | How the table is sorted |
+| `-rank blended\|cached\|uncached\|tld\|reliability` | How the table is sorted |
 | `-resolver IP` | Extra IPv4 (repeatable; optional `:port`) |
 | `-resolvers a,b` | Comma-separated extras |
 | `-no-system` / `-no-public` | Drop OS resolver or the built-in list |
-| `-nxdomain` | Probe `.invalid` for rewrite-to-A behavior |
+| `-nxdomain` | NXDOMAIN rewrite probe (default on; `-nxdomain=false` to skip) |
+| `-tld` | .com TLD-path timing (default on; `-tld=false` to skip) |
+| `-dnssec` | Optional DNSSEC-awareness probe |
 | `-list` | Print the probe list and exit |
 | `-json` / `-csv` / `-html` | Write reports |
 | `-quiet` | No banner/progress on stderr |
 
 ## How ranking works
 
-Each resolver gets two phases:
+Each resolver can run three latency phases plus two optional one-shot checks:
 
 1. **Uncached** — query `u-<run>-<i>.<popular-domain>`. The label is unique, so the resolver cannot answer that QNAME from cache and must recurse. A well-formed reply counts as success, **including NXDOMAIN**.
 2. **Cached** — query a popular name once to warm the cache, then time a **second** A query of the same name. Success requires `NOERROR` plus at least one A record.
+3. **TLD-path (.com)** — query `c-<run>-<i>.com`, a unique nonexistent second-level name. The resolver must consult .com TLD servers. NXDOMAIN is a successful reply; an A record is treated as NXDOMAIN rewrite.
 
-**Reliability** = successful timed replies / timed attempts (warmup queries are not scored). Timeouts and malformed packets are failures. Latency stats (min / avg / max / p50 / p95) use successful samples only.
+**Reliability / loss %** = successful timed replies / timed attempts (warmup queries are not scored). Timeouts and malformed packets are failures. Latency stats (min / avg / max / p50 / p95 / stddev) use successful samples only.
 
-Default **blended** score (higher is better):
+**NXDOMAIN rewrite** (on by default) queries `nx-<run>.invalid`. An A record instead of NXDOMAIN is search/assist-style interception, not a DNSSEC spoof analysis.
+
+**DNSSEC** (`-dnssec`) queries `dnssec-failed.org`. `SERVFAIL` → resolver appears to validate; any other reply → not validating. This is a coarse awareness flag, not a full DNSSEC audit.
+
+Default **blended** score (higher is better) weights cached and uncached equally:
 
 ```
 score = reliability / (0.5 * cached_p50_ms + 0.5 * uncached_p50_ms)
 ```
 
-If `-nxdomain` sees A records for a reserved `.invalid` name, the score is multiplied by **0.85**. Other modes:
+NXDOMAIN rewrite multiplies score by **0.85**. Other modes:
 
-- `cached` / `uncached` — same formula using only that phase’s p50
+- `cached` / `uncached` / `tld` — same formula using only that phase’s p50
 - `reliability` — raw reply ratio (ties broken by blended p50)
 
 Resolvers with zero successful replies rank last.
 
-Public anycast caches often already hold popular names, so “cached” on 1.1.1.1 / 8.8.8.8 is typically a cache hit at the resolver, not at your stub. Unique uncached labels are the better picture of recursive work.
+Public anycast caches often already hold popular names, so “cached” on 1.1.1.1 / 8.8.8.8 is typically a cache hit at the resolver, not at your stub. Unique uncached labels and the TLD-path names are the better picture of recursive work.
 
 ## Tests
 
@@ -104,9 +112,9 @@ To exercise a real network path after building:
 
 ## Scope (v1)
 
-Included: IPv4 UDP/53, curated public list, system resolver via `/etc/resolv.conf` (Linux/macOS; on Windows pass `-resolver`), custom IPs, ranked table, JSON/CSV/HTML, NXDOMAIN rewrite flag.
+Included: IPv4 UDP/53, curated public list, system resolver via `/etc/resolv.conf` (Linux/macOS; on Windows pass `-resolver`), custom IPs, cached / uncached / TLD-path latency, loss %, NXDOMAIN rewrite, optional DNSSEC flag, ranked table, JSON/CSV/HTML.
 
-Follow-ups (not in v1): IPv6, DoH, DoT, TLD-path timing, DNSSEC, rebinding checks.
+Follow-ups (not in v1): IPv6, DoH, DoT, rebinding checks, signed-domain auth timing.
 
 ## License
 

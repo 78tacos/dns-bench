@@ -21,9 +21,9 @@ const Disclaimer = "dns-bench is an independent MIT-licensed tool. It is not aff
 // Table renders a ranked terminal table.
 func Table(rows []rank.Row) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-4s  %-28s  %-18s  %-18s  %-7s  %-8s  %s\n",
-		"RANK", "RESOLVER", "CACHED p50/p95", "UNCACHED p50/p95", "LOSS", "NX", "SCORE")
-	fmt.Fprintf(&b, "%s\n", strings.Repeat("-", 110))
+	fmt.Fprintf(&b, "%-4s  %-24s  %-16s  %-16s  %-16s  %-7s  %-8s  %-8s  %s\n",
+		"RANK", "RESOLVER", "CACHED p50/p95", "UNCACHED p50/p95", "TLD p50/p95", "LOSS", "NX", "DNSSEC", "SCORE")
+	fmt.Fprintf(&b, "%s\n", strings.Repeat("-", 128))
 	if len(rows) == 0 {
 		b.WriteString("(no results)\n")
 		return b.String()
@@ -36,18 +36,30 @@ func Table(rows []rank.Row) string {
 			} else {
 				nx = "ok"
 			}
+		} else if r.NXRewrite {
+			nx = "rewrite"
+		}
+		dnssec := "—"
+		if r.DNSSECChecked {
+			if r.DNSSECValidate {
+				dnssec = "yes"
+			} else {
+				dnssec = "no"
+			}
 		}
 		sys := ""
 		if r.System {
 			sys = "*"
 		}
-		fmt.Fprintf(&b, "%-4d  %-28s  %-18s  %-18s  %-7s  %-8s  %.3f\n",
+		fmt.Fprintf(&b, "%-4d  %-24s  %-16s  %-16s  %-16s  %-7s  %-8s  %-8s  %.3f\n",
 			i+1,
-			truncate(sys+r.Name+" "+r.Address, 28),
+			truncate(sys+r.Name+" "+r.Address, 24),
 			pair(r.Cached),
 			pair(r.Uncached),
+			pair(r.TLD),
 			fmt.Sprintf("%.1f%%", (1-r.Reliability)*100),
 			nx,
+			dnssec,
 			r.Score,
 		)
 	}
@@ -63,6 +75,16 @@ func pair(s stats.Summary) string {
 
 func fmtMS(d time.Duration) string {
 	return fmt.Sprintf("%.1f", stats.Milliseconds(d))
+}
+
+func dnssecLabel(r rank.Row) string {
+	if !r.DNSSECChecked {
+		return ""
+	}
+	if r.DNSSECValidate {
+		return "validating"
+	}
+	return "no"
 }
 
 func truncate(s string, n int) string {
@@ -81,15 +103,20 @@ func SummaryLine(rows []rank.Row, mode rank.Mode) string {
 	if top.Reliability <= 0 {
 		return "Every resolver failed to answer; check UDP/53 connectivity."
 	}
-	return fmt.Sprintf(
-		"Top pick on this network (%s rank): %s %s — cached p50 %s ms, uncached p50 %s ms, %.0f%% replies.",
+	line := fmt.Sprintf(
+		"Top pick on this network (%s rank): %s %s — cached p50 %s ms, uncached p50 %s ms, TLD p50 %s ms, %.0f%% replies.",
 		mode.String(),
 		top.Name,
 		top.Address,
 		fmtMS(top.Cached.P50),
 		fmtMS(top.Uncached.P50),
+		fmtMS(top.TLD.P50),
 		top.Reliability*100,
 	)
+	if top.NXRewrite {
+		line += " NXDOMAIN rewrite detected (a reserved/nonexistent name returned an A record)."
+	}
+	return line
 }
 
 // FileReport is the JSON document written by -json.
@@ -119,15 +146,24 @@ type jsonRow struct {
 	UncachedMin float64 `json:"uncached_min_ms"`
 	UncachedAvg float64 `json:"uncached_avg_ms"`
 	UncachedMax float64 `json:"uncached_max_ms"`
+	UncachedSD  float64 `json:"uncached_stddev_ms"`
+	TLDP50      float64 `json:"tld_p50_ms"`
+	TLDP95      float64 `json:"tld_p95_ms"`
+	TLDMin      float64 `json:"tld_min_ms"`
+	TLDAvg      float64 `json:"tld_avg_ms"`
+	TLDMax      float64 `json:"tld_max_ms"`
+	TLDSD       float64 `json:"tld_stddev_ms"`
+	CachedSD    float64 `json:"cached_stddev_ms"`
 	Reliability float64 `json:"reliability"`
 	Successes   int     `json:"successes"`
 	Attempts    int     `json:"attempts"`
 	NXRewrite   bool    `json:"nx_rewrite"`
 	NXChecked   bool    `json:"nx_checked"`
+	DNSSEC      string  `json:"dnssec"`
 	Score       float64 `json:"score"`
 }
 
-const methodology = "Cached latency is the timed A query after a warmup of the same popular name. Uncached latency uses a unique label (u-<run>-<i>.<domain>) so the QNAME is not already in cache; NXDOMAIN still counts as a successful reply. Reliability is successful replies / timed attempts. Default rank is equal-weight blended p50 with reliability in the numerator and an 0.85 multiplier if NXDOMAIN rewrite is detected."
+const methodology = "Cached latency is the timed A query after a warmup of the same popular name. Uncached latency uses a unique label (u-<run>-<i>.<domain>) so the QNAME is not already in cache; NXDOMAIN still counts as a successful reply. TLD-path latency queries a unique nonexistent .com SLD (c-<run>-<i>.com) so the resolver must consult .com TLD servers. Reliability is successful replies / timed attempts. Default rank is equal-weight blended cached+uncached p50 with reliability in the numerator and an 0.85 multiplier if NXDOMAIN rewrite is detected. Optional DNSSEC check queries dnssec-failed.org: SERVFAIL is treated as validating, any other reply as not validating."
 
 // JSON encodes a report.
 func JSON(rows []rank.Row, mode rank.Mode, now time.Time) ([]byte, error) {
@@ -152,16 +188,25 @@ func JSON(rows []rank.Row, mode rank.Mode, now time.Time) ([]byte, error) {
 			CachedMinMS: stats.Milliseconds(r.Cached.Min),
 			CachedAvgMS: stats.Milliseconds(r.Cached.Avg),
 			CachedMaxMS: stats.Milliseconds(r.Cached.Max),
+			CachedSD:    stats.Milliseconds(r.Cached.StdDev),
 			UncachedP50: stats.Milliseconds(r.Uncached.P50),
 			UncachedP95: stats.Milliseconds(r.Uncached.P95),
 			UncachedMin: stats.Milliseconds(r.Uncached.Min),
 			UncachedAvg: stats.Milliseconds(r.Uncached.Avg),
 			UncachedMax: stats.Milliseconds(r.Uncached.Max),
+			UncachedSD:  stats.Milliseconds(r.Uncached.StdDev),
+			TLDP50:      stats.Milliseconds(r.TLD.P50),
+			TLDP95:      stats.Milliseconds(r.TLD.P95),
+			TLDMin:      stats.Milliseconds(r.TLD.Min),
+			TLDAvg:      stats.Milliseconds(r.TLD.Avg),
+			TLDMax:      stats.Milliseconds(r.TLD.Max),
+			TLDSD:       stats.Milliseconds(r.TLD.StdDev),
 			Reliability: r.Reliability,
 			Successes:   r.Successes,
 			Attempts:    r.Attempts,
 			NXRewrite:   r.NXRewrite,
 			NXChecked:   r.NXChecked,
+			DNSSEC:      dnssecLabel(r),
 			Score:       r.Score,
 		})
 	}
@@ -173,9 +218,10 @@ func CSV(w io.Writer, rows []rank.Row) error {
 	cw := csv.NewWriter(w)
 	header := []string{
 		"rank", "name", "address", "system",
-		"cached_min_ms", "cached_avg_ms", "cached_max_ms", "cached_p50_ms", "cached_p95_ms",
-		"uncached_min_ms", "uncached_avg_ms", "uncached_max_ms", "uncached_p50_ms", "uncached_p95_ms",
-		"reliability", "successes", "attempts", "nx_rewrite", "score",
+		"cached_min_ms", "cached_avg_ms", "cached_max_ms", "cached_p50_ms", "cached_p95_ms", "cached_stddev_ms",
+		"uncached_min_ms", "uncached_avg_ms", "uncached_max_ms", "uncached_p50_ms", "uncached_p95_ms", "uncached_stddev_ms",
+		"tld_min_ms", "tld_avg_ms", "tld_max_ms", "tld_p50_ms", "tld_p95_ms", "tld_stddev_ms",
+		"reliability", "successes", "attempts", "nx_rewrite", "dnssec", "score",
 	}
 	if err := cw.Write(header); err != nil {
 		return err
@@ -186,12 +232,14 @@ func CSV(w io.Writer, rows []rank.Row) error {
 			r.Name,
 			r.Address,
 			fmt.Sprintf("%t", r.System),
-			fmtMS(r.Cached.Min), fmtMS(r.Cached.Avg), fmtMS(r.Cached.Max), fmtMS(r.Cached.P50), fmtMS(r.Cached.P95),
-			fmtMS(r.Uncached.Min), fmtMS(r.Uncached.Avg), fmtMS(r.Uncached.Max), fmtMS(r.Uncached.P50), fmtMS(r.Uncached.P95),
+			fmtMS(r.Cached.Min), fmtMS(r.Cached.Avg), fmtMS(r.Cached.Max), fmtMS(r.Cached.P50), fmtMS(r.Cached.P95), fmtMS(r.Cached.StdDev),
+			fmtMS(r.Uncached.Min), fmtMS(r.Uncached.Avg), fmtMS(r.Uncached.Max), fmtMS(r.Uncached.P50), fmtMS(r.Uncached.P95), fmtMS(r.Uncached.StdDev),
+			fmtMS(r.TLD.Min), fmtMS(r.TLD.Avg), fmtMS(r.TLD.Max), fmtMS(r.TLD.P50), fmtMS(r.TLD.P95), fmtMS(r.TLD.StdDev),
 			fmt.Sprintf("%.4f", r.Reliability),
 			fmt.Sprintf("%d", r.Successes),
 			fmt.Sprintf("%d", r.Attempts),
 			fmt.Sprintf("%t", r.NXRewrite),
+			dnssecLabel(r),
 			fmt.Sprintf("%.6f", r.Score),
 		}
 		if err := cw.Write(rec); err != nil {
@@ -228,7 +276,7 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
 	fmt.Fprintf(&b, "<p>%s</p>", html.EscapeString(SummaryLine(rows, mode)))
 	fmt.Fprintf(&b, "<p class=\"disc\">%s</p>", html.EscapeString(Disclaimer))
 	b.WriteString("<table><thead><tr>")
-	for _, h := range []string{"Rank", "Resolver", "Cached p50", "Uncached p50", "Loss", "NX", "Score", "Relative"} {
+	for _, h := range []string{"Rank", "Resolver", "Cached p50", "Uncached p50", "TLD p50", "Loss", "NX", "DNSSEC", "Score", "Relative"} {
 		fmt.Fprintf(&b, "<th>%s</th>", h)
 	}
 	b.WriteString("</tr></thead><tbody>")
@@ -241,7 +289,7 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
 	for i, r := range rows {
 		nx := "—"
 		nxClass := ""
-		if r.NXChecked {
+		if r.NXChecked || r.NXRewrite {
 			if r.NXRewrite {
 				nx = "rewrite"
 				nxClass = " class=\"warn\""
@@ -249,19 +297,29 @@ th { color:var(--muted); font-weight:500; font-size:12px; }
 				nx = "ok"
 			}
 		}
+		dnssec := "—"
+		if r.DNSSECChecked {
+			if r.DNSSECValidate {
+				dnssec = "validating"
+			} else {
+				dnssec = "no"
+			}
+		}
 		pct := 0.0
 		if maxBlend > 0 {
 			pct = 100 * r.Score / maxBlend
 		}
-		fmt.Fprintf(&b, "<tr><td>%d</td><td>%s %s</td><td>%s ms</td><td>%s ms</td><td>%.1f%%</td><td%s>%s</td><td>%.3f</td><td><div class=\"bar\"><span style=\"width:%.1f%%\"></span></div></td></tr>",
+		fmt.Fprintf(&b, "<tr><td>%d</td><td>%s %s</td><td>%s ms</td><td>%s ms</td><td>%s ms</td><td>%.1f%%</td><td%s>%s</td><td>%s</td><td>%.3f</td><td><div class=\"bar\"><span style=\"width:%.1f%%\"></span></div></td></tr>",
 			i+1,
 			html.EscapeString(r.Name),
 			html.EscapeString(r.Address),
 			html.EscapeString(fmtMS(r.Cached.P50)),
 			html.EscapeString(fmtMS(r.Uncached.P50)),
+			html.EscapeString(fmtMS(r.TLD.P50)),
 			(1-r.Reliability)*100,
 			nxClass,
 			html.EscapeString(nx),
+			html.EscapeString(dnssec),
 			r.Score,
 			pct,
 		)
