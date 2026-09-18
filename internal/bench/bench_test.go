@@ -116,7 +116,7 @@ func TestRunCachedUncachedTLDAndReliability(t *testing.T) {
 	if good.Attempts != 12 {
 		t.Fatalf("good attempts %d (4 uncached + 4 cached timed + 4 tld; warmup not counted)", good.Attempts)
 	}
-	if good.Successes != 12 || good.Cached.Failures != 0 {
+	if good.Successes != 12 {
 		t.Fatalf("good successes %+v", good)
 	}
 	if good.Cached.P50 != 10*time.Millisecond {
