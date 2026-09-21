@@ -1,6 +1,6 @@
 # dns-bench
 
-**dns-bench** is a small, original command-line lab for measuring DNS **resolver** performance *from your network*. It times well-known public resolvers (Cloudflare, Google, Quad9, OpenDNS, and others), your OS-configured resolver, and any extra IPv4 addresses you pass in.
+**dns-bench** is a small, original command-line lab for measuring DNS **resolver** performance *from your network*. It times well-known public resolvers (Cloudflare, Google, Quad9, OpenDNS, NextDNS, AdGuard, and others), your OS-configured resolver, and any extra IPv4 addresses you pass in.
 
 It is a portfolio tool: ranked terminal output plus optional JSON / CSV / HTML reports. v1 is IPv4/UDP port 53 only.
 
