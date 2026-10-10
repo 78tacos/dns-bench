@@ -94,7 +94,7 @@ func truncate(s string, n int) string {
 	return s[:n-1] + "…"
 }
 
-// SummaryLine is a short original blurb (not a third-party "Conclusions" text).
+// SummaryLine is the one-line result printed under the ranked table.
 func SummaryLine(rows []rank.Row, mode rank.Mode) string {
 	if len(rows) == 0 {
 		return "No resolvers produced results."
@@ -250,7 +250,7 @@ func CSV(w io.Writer, rows []rank.Row) error {
 	return cw.Error()
 }
 
-// HTML writes a self-contained lab-style report (original chrome, not a product clone).
+// HTML writes a self-contained report.
 func HTML(rows []rank.Row, mode rank.Mode, now time.Time) []byte {
 	var b bytes.Buffer
 	b.WriteString("<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">")

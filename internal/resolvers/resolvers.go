@@ -35,8 +35,7 @@ func (r Resolver) Label() string {
 	return fmt.Sprintf("%s %s", r.Name, r.IP)
 }
 
-// PublicIPv4 is a curated, original list of well-known public resolvers.
-// Addresses are public anycast documentation, not a third-party product dump.
+// PublicIPv4 is the built-in list of well-known public resolvers.
 func PublicIPv4() []Resolver {
 	return []Resolver{
 		{Name: "Cloudflare", IP: "1.1.1.1", Port: "53"},

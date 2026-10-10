@@ -81,7 +81,7 @@ func TestJSONCSVHTML(t *testing.T) {
 		t.Fatal("disclaimer")
 	}
 	if strings.Contains(strings.ToLower(string(raw)), "gibson research") == false {
-		// disclaimer mentions GRC by name to be explicit
+		// The disclaimer names GRC, not only "not affiliated".
 		t.Fatal("expected GRC named in disclaimer")
 	}
 

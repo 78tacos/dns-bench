@@ -1,7 +1,6 @@
 package names
 
-// Popular is a small, original list of well-known names used to warm
-// resolver caches. It is not copied from any third-party benchmark product.
+// Popular is a short list of well-known names used to warm resolver caches.
 var Popular = []string{
 	"cloudflare.com",
 	"google.com",

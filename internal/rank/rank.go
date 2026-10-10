@@ -48,7 +48,7 @@ type Row struct {
 	Score       float64
 }
 
-// ParseMode accepts blended|cached|uncached|reliability (aliases allowed).
+// ParseMode accepts blended, cached, uncached, tld, or reliability, plus a few aliases.
 func ParseMode(s string) (Mode, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", "blended", "blend":
