@@ -28,7 +28,7 @@ func QueryA(ctx context.Context, server, qname string, timeout time.Duration) Re
 	payload, err := EncodeQuery(id, qname, TypeA)
 	if err != nil {
 		res.Err = err
-		res.RTT = time.Since(start)
+		res.RTT = clampRTT(time.Since(start))
 		return res
 	}
 	addr := canonicalize(server)
@@ -36,7 +36,7 @@ func QueryA(ctx context.Context, server, qname string, timeout time.Duration) Re
 	conn, err := d.DialContext(ctx, "udp4", addr)
 	if err != nil {
 		res.Err = err
-		res.RTT = time.Since(start)
+		res.RTT = clampRTT(time.Since(start))
 		return res
 	}
 	defer conn.Close()
@@ -47,17 +47,17 @@ func QueryA(ctx context.Context, server, qname string, timeout time.Duration) Re
 	}
 	if err := conn.SetDeadline(deadline); err != nil {
 		res.Err = err
-		res.RTT = time.Since(start)
+		res.RTT = clampRTT(time.Since(start))
 		return res
 	}
 	if _, err := conn.Write(payload); err != nil {
 		res.Err = err
-		res.RTT = time.Since(start)
+		res.RTT = clampRTT(time.Since(start))
 		return res
 	}
 	buf := make([]byte, 2048)
 	n, err := conn.Read(buf)
-	res.RTT = time.Since(start)
+	res.RTT = clampRTT(time.Since(start))
 	if err != nil {
 		res.Err = err
 		return res
@@ -78,6 +78,18 @@ func QueryA(ctx context.Context, server, qname string, timeout time.Duration) Re
 	res.RCode = parsed.RCode
 	res.Answers = parsed.Answers
 	return res
+}
+
+// clampRTT turns a non-positive measurement into 1ns.
+// Go 1.22 on Windows reads monotonic time from the interrupt-time
+// clock, which advances about every 15ms. A loopback reply can finish
+// inside one tick, so time.Since returns 0. Rank treats a non-positive
+// RTT as infinite latency.
+func clampRTT(d time.Duration) time.Duration {
+	if d > 0 {
+		return d
+	}
+	return time.Nanosecond
 }
 
 func canonicalize(server string) string {
