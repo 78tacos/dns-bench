@@ -66,6 +66,14 @@ func TestPublicListHasExpectedProviders(t *testing.T) {
 		"8.8.8.8":        "Google",
 		"9.9.9.9":        "Quad9",
 		"208.67.222.222": "OpenDNS",
+		"45.90.28.0":     "NextDNS",
+		"45.90.30.0":     "NextDNS",
+		"94.140.15.15":   "AdGuard",
+		"194.242.2.2":    "Mullvad",
+		"64.6.64.6":      "Verisign",
+		"74.82.42.42":    "Hurricane Electric",
+		"77.88.8.8":      "Yandex",
+		"8.26.56.26":     "Comodo",
 	}
 	got := map[string]string{}
 	for _, r := range resolvers.PublicIPv4() {
