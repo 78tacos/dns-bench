@@ -8,20 +8,19 @@ import (
 
 // Summary is latency statistics over successful samples only.
 type Summary struct {
-	Count    int
-	Failures int
-	Min      time.Duration
-	Avg      time.Duration
-	Max      time.Duration
-	P50      time.Duration
-	P95      time.Duration
-	StdDev   time.Duration
+	Count  int
+	Min    time.Duration
+	Avg    time.Duration
+	Max    time.Duration
+	P50    time.Duration
+	P95    time.Duration
+	StdDev time.Duration
 }
 
 // Summarize computes min/avg/max and nearest-rank p50/p95.
-// samples may be unsorted; failures is recorded as-is.
-func Summarize(samples []time.Duration, failures int) Summary {
-	s := Summary{Count: len(samples), Failures: failures}
+// samples may be unsorted.
+func Summarize(samples []time.Duration) Summary {
+	s := Summary{Count: len(samples)}
 	if len(samples) == 0 {
 		return s
 	}

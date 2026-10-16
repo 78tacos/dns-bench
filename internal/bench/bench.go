@@ -44,10 +44,8 @@ type Measurement struct {
 	Attempts       int
 	NXRewrite      bool
 	NXChecked      bool
-	NXRCode        dnsquery.RCode
 	DNSSECChecked  bool
 	DNSSECValidate bool
-	DNSSECRCode    dnsquery.RCode
 }
 
 // Run benchmarks each resolver. Resolvers are probed in parallel; queries
@@ -92,7 +90,6 @@ func runOne(ctx context.Context, cfg Config, r resolvers.Resolver, domains []str
 	addr := r.Addr()
 
 	var uncached []time.Duration
-	var uncachedFail int
 	for i := 0; i < cfg.Queries; i++ {
 		m.Attempts++
 		qname := uncachedName(cfg.RunID, i, domains[i%len(domains)])
@@ -100,14 +97,11 @@ func runOne(ctx context.Context, cfg Config, r resolvers.Resolver, domains []str
 		if replyOK(res) {
 			m.Successes++
 			uncached = append(uncached, res.RTT)
-		} else {
-			uncachedFail++
 		}
 	}
-	m.Uncached = stats.Summarize(uncached, uncachedFail)
+	m.Uncached = stats.Summarize(uncached)
 
 	var cached []time.Duration
-	var cachedFail int
 	for i := 0; i < cfg.Queries; i++ {
 		qname := domains[i%len(domains)]
 		_ = cfg.Query(ctx, addr, qname, cfg.Timeout) // warmup; not scored
@@ -116,15 +110,12 @@ func runOne(ctx context.Context, cfg Config, r resolvers.Resolver, domains []str
 		if cachedOK(res) {
 			m.Successes++
 			cached = append(cached, res.RTT)
-		} else {
-			cachedFail++
 		}
 	}
-	m.Cached = stats.Summarize(cached, cachedFail)
+	m.Cached = stats.Summarize(cached)
 
 	if cfg.CheckTLD {
 		var tld []time.Duration
-		var tldFail int
 		for i := 0; i < cfg.Queries; i++ {
 			m.Attempts++
 			qname := tldName(cfg.RunID, i)
@@ -135,11 +126,9 @@ func runOne(ctx context.Context, cfg Config, r resolvers.Resolver, domains []str
 				if len(res.Answers) > 0 {
 					m.NXRewrite = true
 				}
-			} else {
-				tldFail++
 			}
 		}
-		m.TLD = stats.Summarize(tld, tldFail)
+		m.TLD = stats.Summarize(tld)
 	}
 
 	if cfg.CheckNX {
@@ -147,7 +136,6 @@ func runOne(ctx context.Context, cfg Config, r resolvers.Resolver, domains []str
 		res := cfg.Query(ctx, addr, qname, cfg.Timeout)
 		if replyOK(res) {
 			m.NXChecked = true
-			m.NXRCode = res.RCode
 			if len(res.Answers) > 0 {
 				m.NXRewrite = true
 			}
@@ -158,7 +146,6 @@ func runOne(ctx context.Context, cfg Config, r resolvers.Resolver, domains []str
 		res := cfg.Query(ctx, addr, DNSSECProbeName, cfg.Timeout)
 		if replyOK(res) {
 			m.DNSSECChecked = true
-			m.DNSSECRCode = res.RCode
 			if res.RCode == dnsquery.RCodeServFail {
 				m.DNSSECValidate = true
 			}
