@@ -46,8 +46,8 @@ func TestSummarize(t *testing.T) {
 		30 * time.Millisecond,
 		20 * time.Millisecond,
 	}
-	s := stats.Summarize(samples, 2)
-	if s.Count != 4 || s.Failures != 2 {
+	s := stats.Summarize(samples)
+	if s.Count != 4 {
 		t.Fatalf("counts: %+v", s)
 	}
 	if s.Min != 10*time.Millisecond || s.Max != 40*time.Millisecond {
@@ -67,8 +67,8 @@ func TestSummarize(t *testing.T) {
 }
 
 func TestSummarizeEmpty(t *testing.T) {
-	s := stats.Summarize(nil, 5)
-	if s.Count != 0 || s.Failures != 5 || s.P50 != 0 {
+	s := stats.Summarize(nil)
+	if s.Count != 0 || s.P50 != 0 {
 		t.Fatalf("empty: %+v", s)
 	}
 }
